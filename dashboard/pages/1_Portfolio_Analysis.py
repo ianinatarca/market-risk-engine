@@ -21,46 +21,16 @@ from risk.historical import historical_var_es
 from risk.copulas import mc_portfolio_pnl, var_cvar
 
 st.title("📌 Portfolio Analysis – What’s Driving Your Risk?")
+st.markdown("### 🔧 DEBUG VERSION WITH INLINE TIMING")
 
 # ==========================================================
-# PERFORMANCE TIMING — shown directly on the main page
+# 1. Load data (timed)
 # ==========================================================
-timing_box = st.expander("⏱ Performance timings", expanded=True)
+t0 = time.perf_counter()
+df_ret, w = load_data()
+t1 = time.perf_counter()
+st.markdown(f"**⏱ load_data:** {t1 - t0:.3f} s")
 
-def timed(label, func, *args, **kwargs):
-    t0 = time.perf_counter()
-    out = func(*args, **kwargs)
-    t1 = time.perf_counter()
-    timing_box.write(f"**{label}:** {t1 - t0:.3f} s")
-    return out
-
-
-# ==========================================================
-# CACHED HELPERS
-# ==========================================================
-@st.cache_data
-def load_data_cached():
-    return load_data()
-
-@st.cache_data
-def get_student_t_stats(df_ret, seed: int = 42) -> pd.DataFrame:
-    rng = default_rng(seed)
-    return compute_student_t_stats(df_ret, rng)
-
-@st.cache_data
-def get_garch_out(df_ret_for_garch: pd.DataFrame) -> pd.Series:
-    """Returns (nu_g, mu_g, sigma_g) per asset."""
-    return df_ret_for_garch.apply(garch_fit)
-
-@st.cache_data
-def get_mc_pnl(df_ret, w, notional, n_sims, horizon_days, lam, nu_copula, df_marg):
-    return mc_portfolio_pnl(df_ret, w, notional, n_sims, horizon_days, lam, nu_copula, df_marg)
-
-
-# ==========================================================
-# 1. Load data
-# ==========================================================
-df_ret, w = timed("load_data", load_data_cached)
 port_ret = df_ret @ w
 notional = 1_000_000
 
@@ -79,13 +49,16 @@ st.markdown(
 """
 )
 
-
 # ==========================================================
-# 2. Per-asset static Student-t risk
+# 2. Per-asset static Student-t risk (timed)
 # ==========================================================
 st.subheader("Per-asset risk – static Student-t")
 
-stats_t = timed("compute_student_t_stats", get_student_t_stats, df_ret)
+t0 = time.perf_counter()
+rng = default_rng(42)
+stats_t = compute_student_t_stats(df_ret, rng)
+t1 = time.perf_counter()
+st.markdown(f"**⏱ compute_student_t_stats:** {t1 - t0:.3f} s")
 
 es95_col = "ES95"
 var95_col = "VaR95"
@@ -105,17 +78,29 @@ with c2:
     st.markdown("#### Worst 5 (highest risk)")
     st.dataframe(worst_5_t[display_cols].applymap(lambda x: f"{x:.2%}"))
 
+st.markdown(
+"""
+**Interpretation**
 
-# ==========================================================
-# 3. Per-asset conditional GARCH-t risk
-# ==========================================================
-st.subheader("Per-asset risk – conditional GARCH-t")
-
-st.caption(
-    f"GARCH computed only on active assets and last {N_GARCH_DAYS} days for performance."
+- This fit assumes each asset’s returns are i.i.d. Student-t with **constant** volatility.  
+- ES 95% is the *average loss* in the worst 5% of days *for that asset alone*.  
+- Here you can clearly see which names are driving the **tail risk** (Cameco, Uranium,
+  Futu, ASML, etc.) vs the stabilisers (govies like Bund, BTP FX, OAT…).
+"""
 )
 
-garch_out = timed("get_garch_out (GARCH)", get_garch_out, df_ret_garch)
+# ==========================================================
+# 3. Per-asset conditional GARCH-t risk (timed)
+# ==========================================================
+st.subheader("Per-asset risk – conditional GARCH-t")
+st.caption(
+    f"GARCH computed only on active assets and last {N_GARCH_DAYS} days."
+)
+
+t0 = time.perf_counter()
+garch_out = df_ret_garch.apply(garch_fit)  # each: (nu_g, mu_g, sigma_g)
+t1 = time.perf_counter()
+st.markdown(f"**⏱ garch_fit over assets:** {t1 - t0:.3f} s")
 
 dfs_g = garch_out.apply(lambda x: x[0])
 mu_g  = garch_out.apply(lambda x: x[1])
@@ -155,28 +140,42 @@ with c2:
     st.markdown("#### Worst 5 (highest conditional tail risk)")
     st.dataframe(worst_5_g[["VaR95", "ES95"]].applymap(lambda x: f"{x:.2%}"))
 
+st.markdown(
+"""
+**Interpretation**
+
+- Here each asset’s volatility is **time-varying**, estimated via a GARCH(1,1) model.  
+- ES 95% now reflects the **current volatility regime** rather than a long-run average.  
+- Comparing with the static Student-t section shows which names become
+  **more dangerous in stressed regimes** (high conditional volatility).
+"""
+)
 
 # ==========================================================
-# 4. Portfolio-level risk – multiple models
+# 4. Portfolio-level VaR/ES – multiple models
 # ==========================================================
 st.subheader("Portfolio-level VaR / ES – model comparison")
 
-# ---- Monte Carlo settings ----
+# Monte Carlo settings
 n_sims = st.slider("Number of MC simulations", 10_000, 200_000, 50_000, 10_000)
 run_mc = st.checkbox("Run Monte Carlo t-copula", value=False)
 
-# ---- Static Student-t portfolio ----
+# 4.1 Static Student-t portfolio
+t0 = time.perf_counter()
 rng = default_rng(42)
 nu_p = estimate_portfolio_df(port_ret, rng)
 VaR95_t, ES95_t, VaR99_t, ES99_t = portfolio_t_var_es(port_ret, nu_p)
+t1 = time.perf_counter()
+st.markdown(f"**⏱ portfolio_t_var_es:** {t1 - t0:.3f} s")
 
-# ---- GARCH portfolio (reuse GARCH outputs) ----
+# 4.2 GARCH-t portfolio (reuse GARCH outputs)
 w_active     = w[active_mask]
 mu_act       = mu_g.loc[active_cols]
 sig_act      = sig_g.loc[active_cols]
 dfs_act      = dfs_g.loc[active_cols]
 corr_active  = df_ret_garch.corr().values
 
+t0 = time.perf_counter()
 VaR95_g, ES95_g, VaR99_g, ES99_g = portfolio_garch_var_es(
     w_active.values,
     mu_act.values,
@@ -184,24 +183,40 @@ VaR95_g, ES95_g, VaR99_g, ES99_g = portfolio_garch_var_es(
     corr_active,
     dfs_act.values,
 )
+t1 = time.perf_counter()
+st.markdown(f"**⏱ portfolio_garch_var_es:** {t1 - t0:.3f} s")
 
-# ---- Historical ----
+# 4.3 Historical VaR
+t0 = time.perf_counter()
 hist95, hist_es95 = historical_var_es(port_ret, 0.05)
 hist99, hist_es99 = historical_var_es(port_ret, 0.01)
+t1 = time.perf_counter()
+st.markdown(f"**⏱ historical_var_es (95 & 99):** {t1 - t0:.3f} s")
 
-# ---- Monte Carlo ----
+# 4.4 Monte Carlo t-copula
 if run_mc:
-    pnl_1d = timed(
-        "mc_portfolio_pnl (t-copula MC)",
-        get_mc_pnl,
-        df_ret, w, notional, n_sims, 1, 0.94, 5, 5
+    t0 = time.perf_counter()
+    pnl_1d = mc_portfolio_pnl(
+        df_ret, w,
+        notional=notional,
+        n_sims=n_sims,
+        horizon_days=1,
+        lam=0.94,
+        nu_copula=5,
+        df_marg=5,
     )
+    t1 = time.perf_counter()
+    st.markdown(f"**⏱ mc_portfolio_pnl (MC t-copula):** {t1 - t0:.3f} s")
+
+    t0 = time.perf_counter()
     var95_mc, es95_mc = var_cvar(pnl_1d, 0.95)
     var99_mc, es99_mc = var_cvar(pnl_1d, 0.99)
+    t1 = time.perf_counter()
+    st.markdown(f"**⏱ var_cvar on MC PnL:** {t1 - t0:.3f} s")
 else:
     var95_mc = es95_mc = var99_mc = es99_mc = np.nan
 
-# ---- Assemble summary table ----
+# Assemble summary table
 summary = pd.DataFrame({
     "Model": [
         "Static Student-t",
@@ -227,4 +242,3 @@ with c1:
 with c2:
     st.markdown("#### Absolute risk (€)")
     st.dataframe(summary_eur.set_index("Model").applymap(lambda x: f"{x:,.0f} €"))
-
