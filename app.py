@@ -108,21 +108,33 @@ st.markdown(
 st.markdown("</div>", unsafe_allow_html=True)  # close .mims-left
 
 # right side: as-of date
+
+
+# right side: as-of date + author credit
 if latest_date:
     st.markdown(
         f"""
         <div class="mims-right">
-            Data as of <strong>{latest_date}</strong>
+            Data as of <strong>{latest_date}</strong><br>
+            <span style="font-size:0.75rem; color:#888888;">
+                Dashboard created by <strong>Ianina Tarca</strong>
+            </span>
         </div>
         """,
         unsafe_allow_html=True,
     )
 else:
-    st.markdown("<div class='mims-right'></div>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="mims-right">
+            <span style="font-size:0.75rem; color:#888888;">
+                Dashboard created by <strong>Ianina Tarca</strong>
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-st.markdown("</div>", unsafe_allow_html=True)  # close .mims-header
-
-st.markdown("---")
 
 
 # ------------------------------------------------------------
