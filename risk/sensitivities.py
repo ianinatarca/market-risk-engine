@@ -1,96 +1,110 @@
-# risk/sensitivities.py
-
+import numpy as np
 import pandas as pd
 
-
-def compute_position_values(weights: pd.Series,
-                            prices: pd.Series,
-                            notional: float = 1_000_000) -> pd.Series:
+def _align_weights_prices(w: pd.Series, prices: pd.Series) -> tuple[pd.Series, pd.Series]:
     """
-    Map portfolio weights to €-exposures.
-
-    We ignore 'prices' for now and just use weights * notional.
+    Align and normalise weights and prices on the same index.
     """
-    w = weights.reindex(prices.index).fillna(0.0)
-    pos = w * notional
-    pos.name = "Position €"
-    return pos
+    # ensure Series
+    w = pd.Series(w).copy()
+    prices = pd.Series(prices).copy()
+
+    # align indices exactly
+    w = w.reindex(prices.index)
+
+    # fill missing weights with 0
+    w = w.fillna(0.0)
+
+    return w, prices
 
 
-def compute_equity_delta(position_values: pd.Series,
-                         bond_mask: pd.Series,
-                         pct_move: float = 1.0) -> pd.Series:
+def total_sensitivities(
+    w: pd.Series,
+    prices: pd.Series,
+    bond_mask: pd.Series,
+    notional: float = 1_000_000.0,
+    duration_years: float = 6.0,
+):
     """
-    Simple equity delta:
-        ΔPnL_i = Position_i * (pct_move / 100)
+    Compute per-asset and total sensitivities:
 
-    Bonds are excluded (delta = 0) because they are handled via DV01.
+    - Position €  = weight * notional
+    - Equity delta (€/ +1%) for non-bond assets
+    - DV01 (€/ +1bp) for bonds using a flat duration approximation
+
+    Parameters
+    ----------
+    w : pd.Series
+        Portfolio weights, indexed by asset name.
+    prices : pd.Series
+        Last price per asset, same index as returns.
+    bond_mask : pd.Series[bool]
+        True for bond-like instruments, False otherwise.
+    notional : float
+        Portfolio notional in EUR.
+    duration_years : float
+        Flat duration assumption for all bonds.
+
+    Returns
+    -------
+    dict with:
+        - "table": DataFrame with Position €, ΔPnL €/+1%, DV01 €/bp
+        - "delta": per-asset equity delta
+        - "dv01": per-asset DV01
+        - "delta_total": sum of equity deltas
+        - "dv01_total": sum of DV01
     """
-    delta = position_values.copy().astype(float)
-    delta[bond_mask] = 0.0
-    delta *= pct_move / 100.0
-    delta.name = f"ΔPnL €/ +{pct_move}%"
-    return delta
 
+    # 1) Align everything on the same index
+    w_aligned, prices_aligned = _align_weights_prices(w, prices)
+    idx = prices_aligned.index
 
-def compute_dv01(position_values: pd.Series,
-                 bond_mask: pd.Series,
-                 duration_years: float = 6.0) -> pd.Series:
-    """
-    Approximate DV01 using a flat duration for all bonds:
+    bond_mask = pd.Series(bond_mask, index=idx)
+    bond_mask = bond_mask.fillna(False)
 
-        DV01_i ≈ - Position_i * Duration / 10_000
+    # 2) Positions in EUR
+    position_eur = w_aligned * notional
 
-    (negative: higher yields → lower prices)
-    """
-    dv01 = pd.Series(0.0, index=position_values.index, name="DV01 €/bp")
-    dv01[bond_mask] = -position_values[bond_mask] * duration_years / 10_000.0
-    return dv01
+    # 3) Equity delta (€/ +1%): only for non-bonds
+    eq_mask = ~bond_mask
+    delta = position_eur * 0.01 * eq_mask  # linear approx: 1% of position
 
+    # 4) DV01 for bonds (€/ +1bp)
+    # Price change ≈ -Duration * Δy * Price
+    # For 1bp (0.0001): ΔP ≈ -Duration * 0.0001 * Position
+    dv01 = -position_eur * duration_years * 1e-4 * bond_mask
 
-def total_sensitivities(weights: pd.Series,
-                        prices: pd.Series,
-                        bond_mask: pd.Series,
-                        notional: float = 1_000_000,
-                        duration_years: float = 6.0) -> dict:
-    """
-    Main wrapper used by the dashboard.
+    # 5) Totals
+    delta_total = delta.sum()
+    dv01_total = dv01.sum()
 
-    Returns:
-      - table      : per-asset Position / Delta / DV01
-      - delta      : per-asset equity delta
-      - dv01       : per-asset DV01
-      - delta_total: portfolio equity delta (€/1%)
-      - dv01_total : portfolio DV01 (€/bp)
-    """
-    pos = compute_position_values(weights, prices, notional)
-    delta = compute_equity_delta(pos, bond_mask, pct_move=1.0)
-    dv01 = compute_dv01(pos, bond_mask, duration_years)
-
-    table = pd.concat([pos, delta, dv01], axis=1)
+    # 6) Per-asset table
+    table = pd.DataFrame({
+        "Position €": position_eur,
+        "ΔPnL €/ +1.0%": delta,
+        "DV01 €/bp": dv01,
+    })
 
     return {
         "table": table,
         "delta": delta,
         "dv01": dv01,
-        "delta_total": delta.sum(),
-        "dv01_total": dv01.sum(),
+        "delta_total": float(delta_total),
+        "dv01_total": float(dv01_total),
     }
 
 
-def apply_equity_shock(delta_total: float, pct_move: float) -> float:
+def apply_equity_shock(delta_total: float, shock_pct: float) -> float:
     """
-    Portfolio PnL for a given equity move (in %):
-
-        PnL ≈ delta_total * pct_move
+    PnL from an equity shock, given total delta (€/ +1%).
+    shock_pct is in %, e.g. +5 or -3.
     """
-    return delta_total * pct_move
+    return delta_total * (shock_pct / 1.0)
 
 
-def apply_rate_shock(dv01_total: float, bp_move: float) -> float:
+def apply_rate_shock(dv01_total: float, shock_bps: float) -> float:
     """
-    Portfolio PnL for a parallel rate shift (in basis points):
-
-        PnL ≈ dv01_total * bp_move
+    PnL from a rate shock, given total DV01 (€/ +1bp).
+    shock_bps is in basis points, e.g. +100 or -50.
     """
-    return dv01_total * bp_move
+    return dv01_total * shock_bps
