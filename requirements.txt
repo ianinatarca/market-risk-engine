@@ -1,0 +1,15 @@
+streamlit
+pandas
+numpy
+plotly
+scipy
+arch
+statsmodels
+openpyxl
+xlrd
+xlsxwriter
+yfinance
+os
+openpyxl
+arch
+matplotlib
