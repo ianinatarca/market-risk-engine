@@ -9,6 +9,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 from numpy.random import default_rng
+from scipy.stats import t as tdist
 
 from utils.loaders import load_data
 from risk.student_t import compute_student_t_stats
@@ -30,8 +31,8 @@ port_ret = df_ret @ w
 notional = 1_000_000
 
 st.markdown(
-f"""
-- **Assets:** {len(w[w>0])}  
+    f"""
+- **Assets:** {len(w[w > 0])}  
 - **History length:** {len(df_ret)} daily observations  
 - **Notional for risk numbers:** €{notional:,.0f}
 """
@@ -51,63 +52,67 @@ mean_col   = "mean"
 std_col    = "std"
 df_col     = "df"
 
-stats_t_sorted = stats_t.sort_values(es95_col)  # more negative ES = riskier
-worst_5_t = stats_t_sorted.head(5)
-best_5_t  = stats_t_sorted.tail(5)
+# Sort: highest ES (least negative → safest) down to most negative (riskiest)
+stats_t_sorted = stats_t.sort_values(es95_col, ascending=False)
+best_5_t  = stats_t_sorted.head(5)
+worst_5_t = stats_t_sorted.tail(5)
 
-c1, c2 = st.columns(2)
 display_cols = [var95_col, es95_col]
+c1, c2 = st.columns(2)
 
 with c1:
-    st.markdown("#### Worst 5 assets by 95% ES (static Student-t)")
-    st.dataframe(
-        worst_5_t[display_cols].applymap(lambda x: f"{x:.2%}")
-    )
-
-with c2:
     st.markdown("#### Best 5 assets by 95% ES (static Student-t)")
     st.dataframe(
         best_5_t[display_cols].applymap(lambda x: f"{x:.2%}")
     )
 
-
+with c2:
+    st.markdown("#### Worst 5 assets by 95% ES (static Student-t)")
+    st.dataframe(
+        worst_5_t[display_cols].applymap(lambda x: f"{x:.2%}")
+    )
 
 st.markdown(
-"""
+    """
 **Interpretation**
 
-- This fit assumes each asset’s returns are i.i.d. Student-t with **constant** volatility.  
+- Each asset’s returns are modelled as i.i.d. Student-t with **constant** volatility.  
 - ES 95% is the *average loss* in the worst 5% of days *for that asset alone*.  
-- Here you can clearly see which names are driving the **tail risk** (Cameco, Uranium,
-  Futu, ASML, etc.) vs the stabilisers (govies like Bund, BTP FX, OAT…).
+- The left table shows the **most stable names**; the right shows the **largest static
+  tail-risk contributors** under this simple model.
 """
 )
+
 # --------------------------------------------------------------
 # 3. Per-asset conditional GARCH-t risk
 # --------------------------------------------------------------
-from risk.garch import garch_fit
-from scipy.stats import t as tdist
-
 st.subheader("Per-asset risk – conditional GARCH-t")
 
-# fit GARCH per asset
-garch_out = df_ret.apply(garch_fit)   # each element: (nu_g, mu_g, sigma_g)
-
+# Fit GARCH(1,1) with Student-t innovations per asset:
+# each entry: (nu_garch, mu_garch, sigma_garch)
+garch_out = df_ret.apply(garch_fit)
 dfs_g = garch_out.apply(lambda x: x[0])
 mu_g  = garch_out.apply(lambda x: x[1])
 sig_g = garch_out.apply(lambda x: x[2])
 
-garch_stats = pd.DataFrame({
-    "df_garch":   dfs_g,
-    "mean_garch": mu_g,
-    "std_garch":  sig_g,
-})
+garch_stats = pd.DataFrame(
+    {
+        "df_garch":   dfs_g,
+        "mean_garch": mu_g,
+        "std_garch":  sig_g,
+    }
+)
 
 def es_factor(alpha, nu):
+    """
+    ES multiplier for a left-tail Student-t(ν) at probability alpha.
+    Returns a **negative** number (loss).
+    """
     q   = tdist.ppf(alpha, df=nu)
     pdf = tdist.pdf(q, df=nu)
     return -((nu + q**2) / (nu - 1)) * (pdf / alpha)
 
+# 1-day conditional VaR / ES at 95% (signed returns: negative = loss)
 garch_stats["VaR95"] = (
     tdist.ppf(0.05, df=garch_stats["df_garch"]) * garch_stats["std_garch"]
     + garch_stats["mean_garch"]
@@ -117,60 +122,58 @@ garch_stats["ES95"] = (
     + garch_stats["mean_garch"]
 )
 
-garch_sorted = garch_stats.sort_values("ES95")  # more negative = riskier
-worst_5_g = garch_sorted.head(5)
-best_5_g  = garch_sorted.tail(5)
+# Sort: highest ES (least negative → safest) down to most negative (riskiest)
+garch_sorted = garch_stats.sort_values("ES95", ascending=False)
+best_5_g  = garch_sorted.head(5)
+worst_5_g = garch_sorted.tail(5)
 
 c1, c2 = st.columns(2)
 with c1:
-    st.markdown("#### Worst 5 assets by 95% ES (GARCH-t)")
-    st.dataframe(
-        worst_5_g[["VaR95", "ES95"]].applymap(lambda x: f"{x:.2%}")
-    )
-
-with c2:
     st.markdown("#### Best 5 assets by 95% ES (GARCH-t)")
     st.dataframe(
         best_5_g[["VaR95", "ES95"]].applymap(lambda x: f"{x:.2%}")
     )
 
+with c2:
+    st.markdown("#### Worst 5 assets by 95% ES (GARCH-t)")
+    st.dataframe(
+        worst_5_g[["VaR95", "ES95"]].applymap(lambda x: f"{x:.2%}")
+    )
+
 st.markdown(
-"""
+    """
 **Interpretation**
 
-- Here each asset’s volatility is **time-varying**, estimated via a GARCH(1,1) model.  
-- ES 95% now reflects the **current volatility regime** rather than a long-run average.  
-- Comparing with the static Student-t section shows which names become
-  **more dangerous in stressed regimes** (high conditional volatility).
+- Volatility is now **time-varying**, estimated via a GARCH(1,1) with Student-t shocks.  
+- **VaR 95%** is the 1-day loss exceeded in only 5% of days for that asset under the
+  current conditional volatility.  
+- **ES 95%** is the *average loss* given that you are already in that worst 5% tail.  
+- Comparing these rankings with the static Student-t section shows which names become
+  **more or less risky in the current volatility regime**.
 """
 )
 
-
 # --------------------------------------------------------------
-# 3. Portfolio-level VaR/ES – three models
+# 4. Portfolio-level VaR/ES – model comparison
 # --------------------------------------------------------------
 st.subheader("Portfolio-level VaR / ES – model comparison")
 
-# 3.1 Static Student-t (variance–covariance style)
+# 4.1 Static Student-t (variance–covariance style)
 nu_p = estimate_portfolio_df(port_ret, rng)
 VaR95_t, ES95_t, VaR99_t, ES99_t = portfolio_t_var_es(port_ret, nu_p)
 
-# 3.2 GARCH-t portfolio
-garch_out = df_ret.apply(garch_fit)
-dfs_g = garch_out.apply(lambda x: x[0])
-mu_g  = garch_out.apply(lambda x: x[1])
-sig_g = garch_out.apply(lambda x: x[2])
+# 4.2 GARCH-t portfolio
+# (reuse garch_out above)
 corr  = df_ret.corr().values
-
 VaR95_g, ES95_g, VaR99_g, ES99_g = portfolio_garch_var_es(
     w.values, mu_g.values, sig_g.values, corr, dfs_g.values
 )
 
-# 3.3 Historical
+# 4.3 Historical
 hist95, hist_es95 = historical_var_es(port_ret, 0.05)
 hist99, hist_es99 = historical_var_es(port_ret, 0.01)
 
-# 3.4 Monte Carlo t-copula
+# 4.4 Monte Carlo t-copula
 pnl_1d = mc_portfolio_pnl(
     df_ret, w,
     notional=notional,
@@ -210,7 +213,7 @@ with c2:
     st.dataframe(summary_eur.set_index("Model").applymap(lambda x: f"{x:,.0f} €"))
 
 st.markdown(
-"""
+    """
 **What’s the difference between the models?**
 
 - **Static Student-t**  
@@ -220,10 +223,10 @@ st.markdown(
 
 - **GARCH-t**  
   - Volatility per asset is **time-varying** (GARCH(1,1)), correlations still static.  
-  - Captures volatility clustering and fat tails, without full simulation.
+  - Captures volatility clustering and fat tails without simulating full paths.
 
 - **Historical VaR**  
-  - Purely non-parametric: takes the empirical distribution of past portfolio returns.  
+  - Purely non-parametric: uses the empirical distribution of past portfolio returns.  
   - No model assumptions, but heavily dependent on the sample window.
 
 - **Monte Carlo t-copula**  
@@ -234,4 +237,3 @@ Use this page to see **which assets** and **which modelling choices** drive the 
 see in the later pages (MC distributions, stress tests, backtesting).
 """
 )
-
