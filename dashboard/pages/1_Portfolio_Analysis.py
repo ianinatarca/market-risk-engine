@@ -52,8 +52,9 @@ std_col    = "std"
 df_col     = "df"
 
 stats_t_sorted = stats_t.sort_values(es95_col)  # more negative ES = riskier
-worst_5_t = stats_t_sorted.head(5)
-best_5_t  = stats_t_sorted.tail(5)
+best_5_t  = stats_t_sorted.tail(5).iloc[::-1]   # best first
+worst_5_t = stats_t_sorted.head(5).iloc[::-1]   # worst first (reversed)
+
 
 c1, c2 = st.columns(2)
 display_cols = [var95_col, es95_col]
@@ -118,8 +119,9 @@ garch_stats["ES95"] = (
 )
 
 garch_sorted = garch_stats.sort_values("ES95")  # more negative = riskier
-worst_5_g = garch_sorted.head(5)
-best_5_g  = garch_sorted.tail(5)
+best_5_g  = garch_sorted.tail(5).iloc[::-1]     # best first
+worst_5_g = garch_sorted.head(5).iloc[::-1]     # worst first
+
 
 c1, c2 = st.columns(2)
 with c1:
