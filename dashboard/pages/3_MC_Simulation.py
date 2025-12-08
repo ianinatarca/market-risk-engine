@@ -94,10 +94,9 @@ if st.button("Run simulation"):
     fig = px.histogram(pnl, nbins=60, labels={"value": "PnL (€)"})
     st.plotly_chart(fig, use_container_width=True)
 
-# 5. Short explanation under the chart
-
-st.markdown(
-    f"""
+    # 5. Short explanation under the chart
+    st.markdown(
+        f"""
 **How to interpret these numbers**
 
 - **VaR 95% = {var95:,.0f} €**  
@@ -112,4 +111,6 @@ st.markdown(
   → These measure risk in the **extreme 1% tail**.  
   → They represent rarer but more severe market shocks and therefore show larger losses.
 """
-)
+    )
+else:
+    st.info("Choose your parameters and click **Run simulation** to generate VaR / ES results.")
