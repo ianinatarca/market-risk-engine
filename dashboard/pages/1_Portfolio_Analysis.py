@@ -9,6 +9,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 from numpy.random import default_rng
+from scipy.stats import t as tdist
 
 from utils.loaders import load_data
 from risk.student_t import compute_student_t_stats
@@ -22,16 +23,43 @@ from risk.copulas import mc_portfolio_pnl, var_cvar
 st.title("📌 Portfolio Analysis – What’s Driving Your Risk?")
 
 # --------------------------------------------------------------
+# CACHED HELPERS (to avoid recomputation on every rerun)
+# --------------------------------------------------------------
+@st.cache_data
+def get_student_t_stats(df_ret, seed: int = 42) -> pd.DataFrame:
+    rng = default_rng(seed)
+    return compute_student_t_stats(df_ret, rng)
+
+@st.cache_data
+def get_garch_out(df_ret: pd.DataFrame) -> pd.Series:
+    """
+    Returns a Series indexed by asset, each element: (nu_g, mu_g, sigma_g)
+    """
+    return df_ret.apply(garch_fit)
+
+@st.cache_data
+def get_mc_pnl(df_ret, w, notional, n_sims, horizon_days, lam, nu_copula, df_marg):
+    return mc_portfolio_pnl(
+        df_ret, w,
+        notional=notional,
+        n_sims=n_sims,
+        horizon_days=horizon_days,
+        lam=lam,
+        nu_copula=nu_copula,
+        df_marg=df_marg,
+    )
+
+
+# --------------------------------------------------------------
 # 1. Load data
 # --------------------------------------------------------------
 df_ret, w = load_data()
-rng = default_rng(42)
 port_ret = df_ret @ w
 notional = 1_000_000
 
 st.markdown(
-f"""
-- **Assets:** {len(w[w>0])}  
+    f"""
+- **Assets:** {len(w[w > 0])}  
 - **History length:** {len(df_ret)} daily observations  
 - **Notional for risk numbers:** €{notional:,.0f}
 """
@@ -42,7 +70,7 @@ f"""
 # --------------------------------------------------------------
 st.subheader("Per-asset risk – static Student-t")
 
-stats_t = compute_student_t_stats(df_ret, rng)
+stats_t = get_student_t_stats(df_ret)
 
 # consistent column names
 es95_col   = "ES95"
@@ -53,8 +81,7 @@ df_col     = "df"
 
 stats_t_sorted = stats_t.sort_values(es95_col)  # more negative ES = riskier
 best_5_t  = stats_t_sorted.tail(5).iloc[::-1]   # best first
-worst_5_t = stats_t_sorted.head(5).iloc[::-1]   # worst first (reversed)
-
+worst_5_t = stats_t_sorted.head(5).iloc[::-1]   # worst (most negative) first
 
 c1, c2 = st.columns(2)
 display_cols = [var95_col, es95_col]
@@ -71,8 +98,6 @@ with c2:
         best_5_t[display_cols].applymap(lambda x: f"{x:.2%}")
     )
 
-
-
 st.markdown(
 """
 **Interpretation**
@@ -83,16 +108,14 @@ st.markdown(
   Futu, ASML, etc.) vs the stabilisers (govies like Bund, BTP FX, OAT…).
 """
 )
+
 # --------------------------------------------------------------
 # 3. Per-asset conditional GARCH-t risk
 # --------------------------------------------------------------
-from risk.garch import garch_fit
-from scipy.stats import t as tdist
-
 st.subheader("Per-asset risk – conditional GARCH-t")
 
-# fit GARCH per asset
-garch_out = df_ret.apply(garch_fit)   # each element: (nu_g, mu_g, sigma_g)
+# fit GARCH per asset (CACHED)
+garch_out = get_garch_out(df_ret)   # each element: (nu_g, mu_g, sigma_g)
 
 dfs_g = garch_out.apply(lambda x: x[0])
 mu_g  = garch_out.apply(lambda x: x[1])
@@ -122,7 +145,6 @@ garch_sorted = garch_stats.sort_values("ES95")  # more negative = riskier
 best_5_g  = garch_sorted.tail(5).iloc[::-1]     # best first
 worst_5_g = garch_sorted.head(5).iloc[::-1]     # worst first
 
-
 c1, c2 = st.columns(2)
 with c1:
     st.markdown("#### Worst 5 assets by 95% ES (GARCH-t)")
@@ -147,43 +169,52 @@ st.markdown(
 """
 )
 
-
 # --------------------------------------------------------------
-# 3. Portfolio-level VaR/ES – three models
+# 4. Portfolio-level VaR/ES – three / four models
 # --------------------------------------------------------------
 st.subheader("Portfolio-level VaR / ES – model comparison")
 
-# 3.1 Static Student-t (variance–covariance style)
+# Controls for Monte Carlo (heavy part)
+st.markdown("**Monte Carlo t-copula settings**")
+n_sims = st.slider(
+    "Number of Monte Carlo simulations (t-copula)",
+    min_value=10_000,
+    max_value=200_000,
+    value=50_000,
+    step=10_000,
+)
+run_mc = st.checkbox("Run Monte Carlo t-copula (can be slow)", value=False)
+
+# 4.1 Static Student-t (variance–covariance style)
+rng = default_rng(42)
 nu_p = estimate_portfolio_df(port_ret, rng)
 VaR95_t, ES95_t, VaR99_t, ES99_t = portfolio_t_var_es(port_ret, nu_p)
 
-# 3.2 GARCH-t portfolio
-garch_out = df_ret.apply(garch_fit)
-dfs_g = garch_out.apply(lambda x: x[0])
-mu_g  = garch_out.apply(lambda x: x[1])
-sig_g = garch_out.apply(lambda x: x[2])
+# 4.2 GARCH-t portfolio (REUSE garch_out)
 corr  = df_ret.corr().values
-
 VaR95_g, ES95_g, VaR99_g, ES99_g = portfolio_garch_var_es(
     w.values, mu_g.values, sig_g.values, corr, dfs_g.values
 )
 
-# 3.3 Historical
+# 4.3 Historical
 hist95, hist_es95 = historical_var_es(port_ret, 0.05)
 hist99, hist_es99 = historical_var_es(port_ret, 0.01)
 
-# 3.4 Monte Carlo t-copula
-pnl_1d = mc_portfolio_pnl(
-    df_ret, w,
-    notional=notional,
-    n_sims=100_000,
-    horizon_days=1,
-    lam=0.94,
-    nu_copula=5,
-    df_marg=5,
-)
-var95_mc, es95_mc = var_cvar(pnl_1d, alpha=0.95)
-var99_mc, es99_mc = var_cvar(pnl_1d, alpha=0.99)
+# 4.4 Monte Carlo t-copula (optional)
+if run_mc:
+    pnl_1d = get_mc_pnl(
+        df_ret, w,
+        notional=notional,
+        n_sims=n_sims,
+        horizon_days=1,
+        lam=0.94,
+        nu_copula=5,
+        df_marg=5,
+    )
+    var95_mc, es95_mc = var_cvar(pnl_1d, alpha=0.95)
+    var99_mc, es99_mc = var_cvar(pnl_1d, alpha=0.99)
+else:
+    var95_mc = es95_mc = var99_mc = es99_mc = np.nan
 
 # Put everything in a table (per-unit and €)
 summary = pd.DataFrame({
@@ -229,11 +260,10 @@ st.markdown(
   - No model assumptions, but heavily dependent on the sample window.
 
 - **Monte Carlo t-copula**  
-  - Uses an **EWMA covariance** + **t-copula** to simulate 100k correlated scenarios.  
+  - Uses an **EWMA covariance** + **t-copula** to simulate correlated scenarios.  
   - Captures tail dependence and non-Gaussian behaviour; gives both VaR and CVaR.  
 
 Use this page to see **which assets** and **which modelling choices** drive the risk you
 see in the later pages (MC distributions, stress tests, backtesting).
 """
 )
-
