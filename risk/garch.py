@@ -40,10 +40,6 @@ def select_lags(series, p_max=5, q_max=5):
 
 
 
-from arch import arch_model
-
-
-import numpy as np
 
  
 
