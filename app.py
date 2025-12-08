@@ -4,7 +4,11 @@ import sys
 import streamlit as st
 
 # --- Make project root importable for "utils", "risk", etc. ---
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# ROOT should be the project folder
+ROOT = os.path.dirname(os.path.abspath(__file__))
+
+ 
+
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
@@ -75,7 +79,13 @@ st.markdown(
 # ------------------------------------------------------------
 
 logo_path = os.path.join(ROOT, "minerva_logo.jpg")  
+
 st.write("Logo path:", logo_path, "Exists:", os.path.exists(logo_path))
+
+if os.path.exists(logo_path):
+    st.image(logo_path, width=80)
+else:
+    st.markdown("**MINERVA**")
 
 
 st.markdown("<div class='mims-header'>", unsafe_allow_html=True)
