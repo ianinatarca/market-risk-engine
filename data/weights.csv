@@ -1,37 +1,39 @@
-Ticker,Weight
-Leonardo,0.04
+Name,Weight
+Leonardo S.p.A.,0.04
 Gold,0.05
 Uranium,0.04
-Asml,0.035
+ASML Holding,0.035
 Siemens,0.03
 ENAV,0.025
+Euronext,0.025
+Gerdau,0.025
+Novo Nordisk,0.025
 Nutrien,0.025
 Philip Morris,0.025
 Caterpillar,0.02
-Iqvia,0.02
-Mercado libre,0.02
+Coca-Cola HBC,0.025
+IQVIA,0.02
+Mercado Libre,0.02
 Miniso Group,0.02
-PT adaro andalan,0.02
-Unitedhealth group,0.02
-Vitec,0.02
+PT Adaro Andalan Indonesia,0.02
+UnitedHealth Group,0.02
+Vitec Software,0.02
 Airbus,0.015
 Cameco,0.015
 Dollar General,0.015
-Imperial brands,0.015
+Futu Holdings,0.015
+Imperial Brands,0.015
+Shenghe Resources,0.0175
+Xiaomi,0.0175
 Adyen,0.01
-Nu holdings,0.01
-tata consumer,0.01
+Nu Holdings,0.01
+Tata Consumer Products,0.01
 Bund 0% Fb32,0.06
 Venture Global LNG 7.75% 2035,0.06
 Spain 3.45% Oc34,0.08
-UK 0.125% 30/01/2026,0.02
-BTP FX 3.2% JAN26 EUR,0.04
+UK 0.125% 30/01/2026,N/A
+BTP FX 3.2% JAN26 EUR,N/A
 Btp 0.45% Fb29,0.04
 OAT 1.25% MAY36 EUR,0.03
-Natural Gas,0.02
-JBS SA,0.015
-Alfen ,0.015
-Equinor,0.015
-Ferrari,0.015
-Shimano,0.015
-Verizon,0.015
+Romania 2.875% Mz29,0.04
+BTP 2.95% St38,0.04
