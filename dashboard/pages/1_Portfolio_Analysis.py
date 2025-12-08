@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from numpy.random import default_rng
 from scipy.stats import t as tdist
+import time
 
 from utils.loaders import load_data
 from risk.student_t import compute_student_t_stats
@@ -21,6 +22,16 @@ from risk.copulas import mc_portfolio_pnl, var_cvar
 
 
 st.title("📌 Portfolio Analysis – What’s Driving Your Risk?")
+
+# --------------------------------------------------------------
+# Simple timing helper (shows in sidebar)
+# --------------------------------------------------------------
+def timed(label, func, *args, **kwargs):
+    t0 = time.perf_counter()
+    out = func(*args, **kwargs)
+    t1 = time.perf_counter()
+    st.sidebar.write(f"{label}: {t1 - t0:.3f} s")
+    return out
 
 # --------------------------------------------------------------
 # CACHED HELPERS (to avoid recomputation on every rerun)
@@ -58,7 +69,7 @@ def get_mc_pnl(df_ret, w, notional, n_sims, horizon_days, lam, nu_copula, df_mar
 # --------------------------------------------------------------
 # 1. Load data
 # --------------------------------------------------------------
-df_ret, w = load_data_cached()
+df_ret, w = timed("load_data", load_data_cached)
 port_ret = df_ret @ w
 notional = 1_000_000
 
@@ -82,7 +93,7 @@ st.markdown(
 # --------------------------------------------------------------
 st.subheader("Per-asset risk – static Student-t")
 
-stats_t = get_student_t_stats(df_ret)
+stats_t = timed("compute_student_t_stats", get_student_t_stats, df_ret)
 
 # consistent column names
 es95_col   = "ES95"
@@ -131,7 +142,7 @@ st.caption(
 )
 
 # fit GARCH per asset (CACHED, reduced universe & history)
-garch_out = get_garch_out(df_ret_garch)   # each element: (nu_g, mu_g, sigma_g)
+garch_out = timed("get_garch_out (GARCH)", get_garch_out, df_ret_garch)  # each: (nu_g, mu_g, sigma_g)
 
 dfs_g = garch_out.apply(lambda x: x[0])
 mu_g  = garch_out.apply(lambda x: x[1])
@@ -224,14 +235,11 @@ hist99, hist_es99 = historical_var_es(port_ret, 0.01)
 
 # 4.4 Monte Carlo t-copula (optional)
 if run_mc:
-    pnl_1d = get_mc_pnl(
+    pnl_1d = timed(
+        "mc_portfolio_pnl (MC t-copula)",
+        get_mc_pnl,
         df_ret, w,
-        notional=notional,
-        n_sims=n_sims,
-        horizon_days=1,
-        lam=0.94,
-        nu_copula=5,
-        df_marg=5,
+        notional, n_sims, 1, 0.94, 5, 5,
     )
     var95_mc, es95_mc = var_cvar(pnl_1d, alpha=0.95)
     var99_mc, es99_mc = var_cvar(pnl_1d, alpha=0.99)
