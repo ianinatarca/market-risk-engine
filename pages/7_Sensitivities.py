@@ -32,6 +32,14 @@ For rates we use a **simple duration-based approximation** (flat 6-year duration
 # ------------------------------------------------------------
 df_ret, w = load_data()
 prices = (1 + df_ret).cumprod().iloc[-1]
+# Normalize all names for alignment
+def normalize(idx):
+    return idx.str.lower().str.strip()
+
+w.index = normalize(w.index.to_series())
+prices.index = normalize(prices.index.to_series())
+df_ret.columns = normalize(df_ret.columns.to_series())
+
 
 bond_mask = (
     prices.index.str.contains("%")
@@ -51,6 +59,8 @@ st.write("In weights but not in prices:",
          sorted(set(w.index) - set(prices.index)))
 st.write("In prices but not in weights:",
          sorted(set(prices.index) - set(w.index)))
+
+
 
 
 # ------------------------------------------------------------
