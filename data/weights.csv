@@ -1,8 +1,8 @@
 Ticker,Weight
-Leonardo S.p.A.,0.04
+Leonardo,0.04
 Gold,0.05
 Uranium,0.04
-ASML,0.035
+Asml,0.035
 Siemens,0.03
 ENAV,0.025
 Euronext,0.025
@@ -24,7 +24,7 @@ Dollar General,0.015
 Futu holdings,0.015
 Imperial brands,0.015
 Shenghe,0.0175
-Xiaomi,0.0175
+XIAOMI,0.0175
 Adyen,0.01
 Nu holdings,0.01
 tata consumer,0.01
