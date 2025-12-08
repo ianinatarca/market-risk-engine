@@ -94,8 +94,9 @@ if st.button("Run simulation"):
     fig = px.histogram(pnl, nbins=60, labels={"value": "PnL (€)"})
     st.plotly_chart(fig, use_container_width=True)
 
-    # 5. Short explanation under the chart
-  st.markdown(
+# 5. Short explanation under the chart
+
+st.markdown(
     f"""
 **How to interpret these numbers**
 
