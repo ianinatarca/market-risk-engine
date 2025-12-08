@@ -1,8 +1,5 @@
 # dashboard/pages/7_Sensitivities.py
 
-
-
-
 import os, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -12,39 +9,39 @@ import streamlit as st
 import plotly.express as px
 
 from utils.loaders import load_data
-from risk.sensitivities import total_sensitivities, apply_equity_shock, apply_rate_shock
+from risk.sensitivities import (
+    total_sensitivities,
+    apply_equity_shock,
+    apply_rate_shock,
+)
 
 st.title("📊 Portfolio Sensitivities")
 
 st.markdown(
-"""
-This page summarises how your portfolio reacts to **small market moves**:
+    """
+This page shows how the portfolio reacts to **small market moves**:
 
-- **Equity delta**: € impact for a **+1% move** in each equity.
-- **DV01**: € impact for a **+1bp parallel shift** in interest rates on your bond book.
+- **Equity delta** → € impact for a **+1% move** in each equity.  
+- **DV01** → € impact for a **+1bp parallel shift** in interest rates on the bond book.  
 
-For rates we use a **simple duration-based approximation** (flat 6-year duration).
+Rates are approximated with a **flat 6-year duration**.
 """
 )
 
 # ------------------------------------------------------------
 # 1. Load data & identify bonds
 # ------------------------------------------------------------
-
-
-
 df_ret, w = load_data()
 prices = (1 + df_ret).cumprod().iloc[-1]
 
-# ---------- Normalize all names for alignment ----------
+# Normalise all names for safe alignment (case / spaces)
 def normalize(idx):
     return idx.str.lower().str.strip()
 
-w.index      = normalize(w.index.to_series())
+w.index = normalize(w.index.to_series())
 prices.index = normalize(prices.index.to_series())
-df_ret.columns = normalize(df_ret.columns.to_series())
 
-# ---------- Identify bonds on the *lowercased* names ----------
+# Identify bonds on the *lowercased* names
 bond_mask = (
     prices.index.str.contains("%")
     | prices.index.str.contains("btp")
@@ -53,22 +50,8 @@ bond_mask = (
     | prices.index.str.contains("romania")
 )
 
-st.write("Non-zero weights:", w[w != 0])
-
-
-st.caption("Bond assets detected:")
-st.write(list(prices[bond_mask].index))
-
-st.write("Weights index:", list(w.index))
-st.write("Prices index:", list(prices.index))
-
-st.write("In weights but not in prices:",
-         sorted(set(w.index) - set(prices.index)))
-st.write("In prices but not in weights:",
-         sorted(set(prices.index) - set(w.index)))
-
-
-
+with st.expander("Show detected bond instruments"):
+    st.write(list(prices[bond_mask].index))
 
 # ------------------------------------------------------------
 # 2. Compute sensitivities
@@ -91,11 +74,11 @@ with col2:
     st.metric("DV01 (€/ +1bp)", f"{res['dv01_total']:,.2f}")
 
 st.markdown(
-f"""
+    f"""
 - A **+1% move in global equities** would change portfolio value by about  
-  **€{res['delta_total']:,.0f}** (using current weights).
-- A **+100bp parallel rate rise** would cost roughly  
-  **€{apply_rate_shock(res['dv01_total'], 100):,.0f}** on the bond book.
+  **€{res['delta_total']:,.0f}** (given current weights).  
+- A **+100bp parallel rate rise** would impact the bond book by roughly  
+  **€{apply_rate_shock(res['dv01_total'], 100):,.0f}**.
 """
 )
 
@@ -103,6 +86,7 @@ f"""
 # 4. Per-asset table
 # ------------------------------------------------------------
 st.subheader("Per-Asset Exposures")
+
 st.dataframe(
     table.sort_values("Position €", ascending=False),
     use_container_width=True,
@@ -113,7 +97,6 @@ st.dataframe(
 # ------------------------------------------------------------
 # Top 10 equity risk drivers by |delta|
 top_delta = delta.abs().sort_values(ascending=False).head(10)
-top_delta = top_delta.reindex(top_delta.index)  # preserve order
 
 st.subheader("Top Equity Risk Contributors (ΔPnL for +1%)")
 
@@ -155,10 +138,10 @@ with col2:
     st.metric(f"Rate shock PnL ({rate_shock:+d} bp)", f"{pnl_rate:,.0f} €")
 
 st.markdown(
-"""
+    """
 > **Note**  
 > These are **first-order (linear) approximations**.  
-> They are designed to give you a **clear ranking of risk drivers**, not to replace
+> They’re meant to give a **clean ranking of risk drivers**, not to replace
 > full pricing models.
 """
 )
