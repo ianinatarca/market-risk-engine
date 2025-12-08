@@ -35,16 +35,10 @@ port_ret = df_ret @ w
 notional = 1_000_000
 
 # For GARCH: restrict to non-zero-weight assets & last 750 days
-
-# For GARCH: restrict to non-zero-weight assets & last ~250 days (or all if shorter)
-N_GARCH_DAYS = min(250, len(df_ret))
+N_GARCH_DAYS = 750
 active_mask = w > 0
 active_cols = df_ret.columns[active_mask]
 df_ret_garch = df_ret[active_cols].iloc[-N_GARCH_DAYS:]
-
-
-
-
 
 st.markdown(
     f"""
@@ -54,7 +48,6 @@ st.markdown(
 - **Notional:** €{notional:,.0f}
 """
 )
-
 
 # ==========================================================
 # 2. Per-asset static Student-t risk (timed)
@@ -251,21 +244,3 @@ with c2:
     st.dataframe(summary_eur.set_index("Model").applymap(lambda x: f"{x:,.0f} €"))
 
 
-from risk.contrib import component_es
-
-st.subheader("Component ES (risk contribution)")
-
-# Use your Monte Carlo simulated P&Ls or simulate t-distribution per asset
-# Example: reuse t-copula MC simulation with moderate n_sims
-
-n_sims = 50_000
-sim_returns = rng.standard_t(df=5, size=(n_sims, df_ret.shape[1])) * df_ret.std().values
-
-df_contrib = component_es(sim_returns, w.values, alpha=0.05)
-
-st.dataframe(df_contrib.style.format({
-    "weight": "{:.2%}",
-    "MES": "{:.2%}",
-    "CES": "{:.4f}",
-    "pct_contrib": "{:.2%}"
-}))
