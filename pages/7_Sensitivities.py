@@ -30,24 +30,31 @@ For rates we use a **simple duration-based approximation** (flat 6-year duration
 # ------------------------------------------------------------
 # 1. Load data & identify bonds
 # ------------------------------------------------------------
+
+
+
 df_ret, w = load_data()
 prices = (1 + df_ret).cumprod().iloc[-1]
-# Normalize all names for alignment
+
+# ---------- Normalize all names for alignment ----------
 def normalize(idx):
     return idx.str.lower().str.strip()
 
-w.index = normalize(w.index.to_series())
+w.index      = normalize(w.index.to_series())
 prices.index = normalize(prices.index.to_series())
 df_ret.columns = normalize(df_ret.columns.to_series())
 
-
+# ---------- Identify bonds on the *lowercased* names ----------
 bond_mask = (
     prices.index.str.contains("%")
-    | prices.index.str.contains("BTP")
-    | prices.index.str.contains("Bund")
-    | prices.index.str.contains("OAT")
-    | prices.index.str.contains("ROMANIA")
+    | prices.index.str.contains("btp")
+    | prices.index.str.contains("bund")
+    | prices.index.str.contains("oat")
+    | prices.index.str.contains("romania")
 )
+
+st.write("Non-zero weights:", w[w != 0])
+
 
 st.caption("Bond assets detected:")
 st.write(list(prices[bond_mask].index))
