@@ -79,24 +79,25 @@ mean_col   = "mean"
 std_col    = "std"
 df_col     = "df"
 
-stats_t_sorted = stats_t.sort_values(es95_col)  # more negative ES = riskier
-worst_5_t = stats_t_sorted.head(5)  # best first
-best_5_t  = stats_t_sorted.tail(5).iloc[::-1] # worst (most negative) first
+
+
+# Sort ES95 from most negative (worst) to least negative (best)
+stats_t_sorted = stats_t.sort_values(es95_col)  # ascending
+
+worst_5_t = stats_t_sorted.head(5)   # most negative ES → worst
+best_5_t  = stats_t_sorted.tail(5)   # least negative ES → best
 
 c1, c2 = st.columns(2)
-display_cols = [var95_col, es95_col]
 
 with c1:
-    st.markdown("#### Worst 5 assets by 95% ES (static Student-t)")
-    st.dataframe(
-        worst_5_t[display_cols].applymap(lambda x: f"{x:.2%}")
-    )
+    st.markdown("#### Best 5 assets by 95% ES (static Student-t)")
+    st.dataframe(best_5_t[display_cols].applymap(lambda x: f"{x:.2%}"))
 
 with c2:
-    st.markdown("#### Best 5 assets by 95% ES (static Student-t)")
-    st.dataframe(
-        best_5_t[display_cols].applymap(lambda x: f"{x:.2%}")
-    )
+    st.markdown("#### Worst 5 assets by 95% ES (static Student-t)")
+    st.dataframe(worst_5_t[display_cols].applymap(lambda x: f"{x:.2%}"))
+
+
 
 st.markdown(
 """
@@ -141,22 +142,32 @@ garch_stats["ES95"] = (
     + garch_stats["mean_garch"]
 )
 
-garch_sorted = garch_stats.sort_values("ES95")  # more negative = riskier
-best_5_g  = garch_sorted.tail(5).iloc[::-1]     # best first
-worst_5_g = garch_sorted.head(5)   # worst first
+
+
+garch_stats["VaR95"] = (
+    tdist.ppf(0.05, df=garch_stats["df_garch"]) * garch_stats["std_garch"]
+    + garch_stats["mean_garch"]
+)
+garch_stats["ES95"] = (
+    es_factor(0.05, garch_stats["df_garch"]) * garch_stats["std_garch"]
+    + garch_stats["mean_garch"]
+)
+
+garch_sorted = garch_stats.sort_values("ES95")  # ascending: worst → best
+
+worst_5_g = garch_sorted.head(5)
+best_5_g  = garch_sorted.tail(5)
 
 c1, c2 = st.columns(2)
 with c1:
-    st.markdown("#### Worst 5 assets by 95% ES (GARCH-t)")
-    st.dataframe(
-        worst_5_g[["VaR95", "ES95"]].applymap(lambda x: f"{x:.2%}")
-    )
+    st.markdown("#### Best 5 assets by 95% ES (GARCH-t)")
+    st.dataframe(best_5_g[["VaR95", "ES95"]].applymap(lambda x: f"{x:.2%}"))
 
 with c2:
-    st.markdown("#### Best 5 assets by 95% ES (GARCH-t)")
-    st.dataframe(
-        best_5_g[["VaR95", "ES95"]].applymap(lambda x: f"{x:.2%}")
-    )
+    st.markdown("#### Worst 5 assets by 95% ES (GARCH-t)")
+    st.dataframe(worst_5_g[["VaR95", "ES95"]].applymap(lambda x: f"{x:.2%}"))
+
+
 
 st.markdown(
 """
