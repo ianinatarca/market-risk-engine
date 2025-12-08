@@ -28,28 +28,92 @@ latest_date = df_ret.index.max().date() if hasattr(df_ret.index, "max") else Non
 # ------------------------------------------------------------
 # Minerva / MIMS header with logo
 # ------------------------------------------------------------
-header_col1, header_col2 = st.columns([1, 3])
+# ------------------------------------------------------------
+# Lightweight CSS for a cleaner header
+# ------------------------------------------------------------
+st.markdown(
+    """
+    <style>
+    .mims-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.5rem;
+        margin-bottom: 0.75rem;
+    }
+    .mims-left {
+        display: flex;
+        align-items: center;
+        gap: 1.25rem;
+    }
+    .mims-logo img {
+        max-height: 70px;
+    }
+    .mims-title {
+        font-size: 1.6rem;
+        font-weight: 600;
+        margin: 0;
+        padding: 0;
+    }
+    .mims-subtitle {
+        font-size: 0.95rem;
+        color: #777777;
+        margin: 0.15rem 0 0 0;
+    }
+    .mims-right {
+        text-align: right;
+        font-size: 0.85rem;
+        color: #777777;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-with header_col1:
-    # Adjust this path to wherever you saved the Minerva logo
-    logo_path = os.path.join(ROOT, "data", "minerva_logo.png")
-    if os.path.exists(logo_path):
-        st.image(logo_path, use_column_width=False, width=120)
-    else:
-        st.markdown("### MINERVA\nInvestment Management Society")
+# ------------------------------------------------------------
+# Minerva / MIMS header with logo
+# ------------------------------------------------------------
+logo_path = os.path.join(ROOT, "data", "minerva_logo.jpg")  # <-- jpg not png
 
-with header_col2:
+st.markdown("<div class='mims-header'>", unsafe_allow_html=True)
+
+# left side: logo + title block
+st.markdown("<div class='mims-left'>", unsafe_allow_html=True)
+if os.path.exists(logo_path):
+    st.image(logo_path, width=80)
+else:
+    st.markdown("**MINERVA**")
+
+st.markdown(
+    """
+    <div>
+        <p class="mims-title">MIMS – Multi Asset Global Opportunities Fund</p>
+        <p class="mims-subtitle">
+            Portfolio Management Team • Risk & Analytics Dashboard
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+st.markdown("</div>", unsafe_allow_html=True)  # close .mims-left
+
+# right side: as-of date
+if latest_date:
     st.markdown(
-        """
-        ### Minerva Investment Management Society  
-        **MIMS – Multi Asset Global Opportunities Fund**  
-        *Portfolio Management Team Risk Dashboard*
-        """
+        f"""
+        <div class="mims-right">
+            Data as of <strong>{latest_date}</strong>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
-    if latest_date:
-        st.caption(f"Data as of {latest_date}")
+else:
+    st.markdown("<div class='mims-right'></div>", unsafe_allow_html=True)
+
+st.markdown("</div>", unsafe_allow_html=True)  # close .mims-header
 
 st.markdown("---")
+
 
 # ------------------------------------------------------------
 # High-level description
