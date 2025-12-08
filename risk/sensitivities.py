@@ -4,15 +4,15 @@ import numpy as np
 import pandas as pd
 
 
-def _align_weights_prices(w: pd.Series, prices: pd.Series) -> tuple[pd.Series, pd.Series]:
+def _align_weights_prices(w: pd.Series, prices: pd.Series):
     """
-    Align and normalise weights and prices on the same index.
-    Assumes both indices are already 'clean' (e.g. lower-case, stripped).
+    Align weights and prices on the same index.
+    Missing weights become 0.
     """
     w = pd.Series(w).copy()
     prices = pd.Series(prices).copy()
 
-    # align on the union of names, fill missing weights with 0
+    # Align
     w = w.reindex(prices.index).fillna(0.0)
 
     return w, prices
@@ -26,44 +26,54 @@ def total_sensitivities(
     duration_years: float = 6.0,
 ):
     """
-    Compute per-asset and total sensitivities:
-
-    - Position €        = weight * notional
-    - Equity delta      = ΔPnL €/+1% for non-bonds
-    - DV01 €/bp         = duration-based for bonds
-
-    Parameters
-    ----------
-    w : pd.Series
-        Portfolio weights (already aligned + normalised names).
-    prices : pd.Series
-        Current prices, same index as returns.
-    bond_mask : pd.Series[bool]
-        True for bond-like instruments.
-    notional : float
-        Portfolio notional in EUR.
-    duration_years : float
-        Flat duration assumption for all bonds.
-
-    Returns
-    -------
-    dict with:
-        - "table": DataFrame with Position €, ΔPnL €/+1.0%, DV01 €/bp
-        - "delta": per-asset equity delta
-        - "dv01": per-asset DV01
-        - "delta_total": sum of equity deltas
-        - "dv01_total": sum of DV01
+    Compute equity deltas and DV01 for bonds.
     """
 
-    # 1) Align on the same index
-    w_aligned, prices_aligned = _align_weights_prices(w, prices)
-    idx = prices_aligned.index
+    # Ensure aligned & consistent indices
+    w, prices = _align_weights_prices(w, prices)
+    idx = prices.index
 
-    # make sure bond_mask has same index
+    # Ensure mask is a boolean Series on correct index
     bond_mask = pd.Series(bond_mask, index=idx).fillna(False)
 
-    # 2) Positions in EUR
-    position_eur = w_aligned * notional
+    # Position € for each asset
+    position_eur = w * notional
 
-    # 3) Equity delta (€/ +1%) – only for non-bonds
-    eq
+    # Equity delta (€/ +1%)
+    eq_mask = ~bond_mask
+    delta = position_eur * 0.01 * eq_mask  # +1% move
+
+    # DV01 for bonds (€/ +1bp)
+    dv01 = -position_eur * duration_years * 1e-4 * bond_mask  # 1bp = 0.0001
+
+    # Totals
+    delta_total = float(delta.sum())
+    dv01_total = float(dv01.sum())
+
+    # Table
+    table = pd.DataFrame(
+        {
+            "Position €": position_eur,
+            "ΔPnL €/ +1.0%": delta,
+            "DV01 €/bp": dv01,
+        },
+        index=idx,
+    )
+
+    return {
+        "table": table,
+        "delta": delta,
+        "dv01": dv01,
+        "delta_total": delta_total,
+        "dv01_total": dv01_total,
+    }
+
+
+def apply_equity_shock(delta_total: float, shock_pct: float):
+    """Return PnL from equity shock."""
+    return delta_total * (shock_pct / 1.0)
+
+
+def apply_rate_shock(dv01_total: float, shock_bps: float):
+    """Return PnL from rate shock."""
+    return dv01_total * shock_bps
