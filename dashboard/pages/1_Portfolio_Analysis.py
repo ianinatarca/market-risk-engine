@@ -26,16 +26,21 @@ st.title("📌 Portfolio Analysis – What’s Driving Your Risk?")
 # CACHED HELPERS (to avoid recomputation on every rerun)
 # --------------------------------------------------------------
 @st.cache_data
+def load_data_cached():
+    return load_data()
+
+@st.cache_data
 def get_student_t_stats(df_ret, seed: int = 42) -> pd.DataFrame:
     rng = default_rng(seed)
     return compute_student_t_stats(df_ret, rng)
 
 @st.cache_data
-def get_garch_out(df_ret: pd.DataFrame) -> pd.Series:
+def get_garch_out(df_ret_for_garch: pd.DataFrame) -> pd.Series:
     """
     Returns a Series indexed by asset, each element: (nu_g, mu_g, sigma_g)
+    GARCH is applied only on the provided (possibly reduced) df_ret_for_garch.
     """
-    return df_ret.apply(garch_fit)
+    return df_ret_for_garch.apply(garch_fit)
 
 @st.cache_data
 def get_mc_pnl(df_ret, w, notional, n_sims, horizon_days, lam, nu_copula, df_marg):
@@ -53,14 +58,21 @@ def get_mc_pnl(df_ret, w, notional, n_sims, horizon_days, lam, nu_copula, df_mar
 # --------------------------------------------------------------
 # 1. Load data
 # --------------------------------------------------------------
-df_ret, w = load_data()
+df_ret, w = load_data_cached()
 port_ret = df_ret @ w
 notional = 1_000_000
 
+# Only run GARCH on non-zero-weight assets and a shorter history
+N_GARCH_DAYS = 750  # e.g. last ~3Y
+active_mask = w > 0
+active_cols = df_ret.columns[active_mask]
+df_ret_garch = df_ret[active_cols].iloc[-N_GARCH_DAYS:]
+
 st.markdown(
     f"""
-- **Assets:** {len(w[w > 0])}  
-- **History length:** {len(df_ret)} daily observations  
+- **Assets (non-zero weight):** {active_mask.sum()}  
+- **History length (full):** {len(df_ret)} daily observations  
+- **GARCH estimation window:** last {len(df_ret_garch)} days on active assets only  
 - **Notional for risk numbers:** €{notional:,.0f}
 """
 )
@@ -79,7 +91,7 @@ mean_col   = "mean"
 std_col    = "std"
 df_col     = "df"
 
-
+display_cols = [var95_col, es95_col]
 
 # Sort ES95 from most negative (worst) to least negative (best)
 stats_t_sorted = stats_t.sort_values(es95_col)  # ascending
@@ -97,8 +109,6 @@ with c2:
     st.markdown("#### Worst 5 assets by 95% ES (static Student-t)")
     st.dataframe(worst_5_t[display_cols].applymap(lambda x: f"{x:.2%}"))
 
-
-
 st.markdown(
 """
 **Interpretation**
@@ -115,8 +125,13 @@ st.markdown(
 # --------------------------------------------------------------
 st.subheader("Per-asset risk – conditional GARCH-t")
 
-# fit GARCH per asset (CACHED)
-garch_out = get_garch_out(df_ret)   # each element: (nu_g, mu_g, sigma_g)
+st.caption(
+    "⚙️ GARCH is computed only on non-zero-weight assets "
+    f"and last {N_GARCH_DAYS} days to keep it fast."
+)
+
+# fit GARCH per asset (CACHED, reduced universe & history)
+garch_out = get_garch_out(df_ret_garch)   # each element: (nu_g, mu_g, sigma_g)
 
 dfs_g = garch_out.apply(lambda x: x[0])
 mu_g  = garch_out.apply(lambda x: x[1])
@@ -142,17 +157,6 @@ garch_stats["ES95"] = (
     + garch_stats["mean_garch"]
 )
 
-
-
-garch_stats["VaR95"] = (
-    tdist.ppf(0.05, df=garch_stats["df_garch"]) * garch_stats["std_garch"]
-    + garch_stats["mean_garch"]
-)
-garch_stats["ES95"] = (
-    es_factor(0.05, garch_stats["df_garch"]) * garch_stats["std_garch"]
-    + garch_stats["mean_garch"]
-)
-
 garch_sorted = garch_stats.sort_values("ES95")  # ascending: worst → best
 
 worst_5_g = garch_sorted.head(5)
@@ -166,8 +170,6 @@ with c1:
 with c2:
     st.markdown("#### Worst 5 assets by 95% ES (GARCH-t)")
     st.dataframe(worst_5_g[["VaR95", "ES95"]].applymap(lambda x: f"{x:.2%}"))
-
-
 
 st.markdown(
 """
@@ -201,10 +203,19 @@ rng = default_rng(42)
 nu_p = estimate_portfolio_df(port_ret, rng)
 VaR95_t, ES95_t, VaR99_t, ES99_t = portfolio_t_var_es(port_ret, nu_p)
 
-# 4.2 GARCH-t portfolio (REUSE garch_out)
-corr  = df_ret.corr().values
+# 4.2 GARCH-t portfolio (REUSE per-asset GARCH, reduced to active assets)
+w_active       = w[active_mask]
+mu_g_active    = mu_g.loc[active_cols]
+sig_g_active   = sig_g.loc[active_cols]
+dfs_g_active   = dfs_g.loc[active_cols]
+corr_active    = df_ret_garch.corr().values  # correlation over same reduced df
+
 VaR95_g, ES95_g, VaR99_g, ES99_g = portfolio_garch_var_es(
-    w.values, mu_g.values, sig_g.values, corr, dfs_g.values
+    w_active.values,
+    mu_g_active.values,
+    sig_g_active.values,
+    corr_active,
+    dfs_g_active.values,
 )
 
 # 4.3 Historical
