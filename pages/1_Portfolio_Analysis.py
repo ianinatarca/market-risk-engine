@@ -90,66 +90,6 @@ st.markdown(
 )
 
 # ==========================================================
-# 3. Per-asset conditional GARCH-t risk (timed)
-# ==========================================================
-st.subheader("Per-asset risk – conditional GARCH-t")
-st.caption(
-    f"GARCH computed only on active assets and last {N_GARCH_DAYS} days."
-)
-
-t0 = time.perf_counter()
-garch_out = df_ret_garch.apply(garch_fit)  # each: (nu_g, mu_g, sigma_g)
-t1 = time.perf_counter()
-st.markdown(f"**⏱ garch_fit over assets:** {t1 - t0:.3f} s")
-
-dfs_g = garch_out.apply(lambda x: x[0])
-mu_g  = garch_out.apply(lambda x: x[1])
-sig_g = garch_out.apply(lambda x: x[2])
-
-garch_stats = pd.DataFrame({
-    "df_garch": dfs_g,
-    "mean_garch": mu_g,
-    "std_garch": sig_g,
-})
-
-def es_factor(alpha, nu):
-    q   = tdist.ppf(alpha, df=nu)
-    pdf = tdist.pdf(q, df=nu)
-    return -((nu + q**2) / (nu - 1)) * (pdf / alpha)
-
-garch_stats["VaR95"] = (
-    tdist.ppf(0.05, df=garch_stats["df_garch"]) * garch_stats["std_garch"]
-    + garch_stats["mean_garch"]
-)
-garch_stats["ES95"] = (
-    es_factor(0.05, garch_stats["df_garch"]) * garch_stats["std_garch"]
-    + garch_stats["mean_garch"]
-)
-
-garch_sorted = garch_stats.sort_values("ES95")
-
-worst_5_g = garch_sorted.head(5)
-best_5_g  = garch_sorted.tail(5)
-
-c1, c2 = st.columns(2)
-with c1:
-    st.markdown("#### Best 5 (lowest conditional tail risk)")
-    st.dataframe(best_5_g[["VaR95", "ES95"]].applymap(lambda x: f"{x:.2%}"))
-
-with c2:
-    st.markdown("#### Worst 5 (highest conditional tail risk)")
-    st.dataframe(worst_5_g[["VaR95", "ES95"]].applymap(lambda x: f"{x:.2%}"))
-
-st.markdown(
-"""
-**Interpretation**
-
-- Here each asset’s volatility is **time-varying**, estimated via a GARCH(1,1) model.  
-- ES 95% now reflects the **current volatility regime** rather than a long-run average.  
-- Comparing with the static Student-t section shows which names become
-  **more dangerous in stressed regimes** (high conditional volatility).
-"""
-)
 
 # ==========================================================
 # 4. Portfolio-level VaR/ES – multiple models
@@ -244,3 +184,63 @@ with c2:
     st.dataframe(summary_eur.set_index("Model").applymap(lambda x: f"{x:,.0f} €"))
 
 
+# 3. Per-asset conditional GARCH-t risk (timed)
+# ==========================================================
+st.subheader("Per-asset risk – conditional GARCH-t")
+st.caption(
+    f"GARCH computed only on active assets and last {N_GARCH_DAYS} days."
+)
+
+t0 = time.perf_counter()
+garch_out = df_ret_garch.apply(garch_fit)  # each: (nu_g, mu_g, sigma_g)
+t1 = time.perf_counter()
+st.markdown(f"**⏱ garch_fit over assets:** {t1 - t0:.3f} s")
+
+dfs_g = garch_out.apply(lambda x: x[0])
+mu_g  = garch_out.apply(lambda x: x[1])
+sig_g = garch_out.apply(lambda x: x[2])
+
+garch_stats = pd.DataFrame({
+    "df_garch": dfs_g,
+    "mean_garch": mu_g,
+    "std_garch": sig_g,
+})
+
+def es_factor(alpha, nu):
+    q   = tdist.ppf(alpha, df=nu)
+    pdf = tdist.pdf(q, df=nu)
+    return -((nu + q**2) / (nu - 1)) * (pdf / alpha)
+
+garch_stats["VaR95"] = (
+    tdist.ppf(0.05, df=garch_stats["df_garch"]) * garch_stats["std_garch"]
+    + garch_stats["mean_garch"]
+)
+garch_stats["ES95"] = (
+    es_factor(0.05, garch_stats["df_garch"]) * garch_stats["std_garch"]
+    + garch_stats["mean_garch"]
+)
+
+garch_sorted = garch_stats.sort_values("ES95")
+
+worst_5_g = garch_sorted.head(5)
+best_5_g  = garch_sorted.tail(5)
+
+c1, c2 = st.columns(2)
+with c1:
+    st.markdown("#### Best 5 (lowest conditional tail risk)")
+    st.dataframe(best_5_g[["VaR95", "ES95"]].applymap(lambda x: f"{x:.2%}"))
+
+with c2:
+    st.markdown("#### Worst 5 (highest conditional tail risk)")
+    st.dataframe(worst_5_g[["VaR95", "ES95"]].applymap(lambda x: f"{x:.2%}"))
+
+st.markdown(
+"""
+**Interpretation**
+
+- Here each asset’s volatility is **time-varying**, estimated via a GARCH(1,1) model.  
+- ES 95% now reflects the **current volatility regime** rather than a long-run average.  
+- Comparing with the static Student-t section shows which names become
+  **more dangerous in stressed regimes** (high conditional volatility).
+"""
+)
