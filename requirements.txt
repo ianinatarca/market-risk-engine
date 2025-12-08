@@ -9,7 +9,3 @@ openpyxl
 xlrd
 xlsxwriter
 yfinance
-os
-openpyxl
-arch
-matplotlib
