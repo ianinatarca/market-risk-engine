@@ -73,7 +73,10 @@ st.markdown(
 # ------------------------------------------------------------
 # Minerva / MIMS header with logo
 # ------------------------------------------------------------
-logo_path = os.path.join(ROOT,  "minerva_logo.jpg")  
+
+logo_path = os.path.join(ROOT, "minerva_logo.jpg")  
+st.write("Logo path:", logo_path, "Exists:", os.path.exists(logo_path))
+
 
 st.markdown("<div class='mims-header'>", unsafe_allow_html=True)
 
