@@ -1,5 +1,8 @@
 # dashboard/pages/7_Sensitivities.py
 
+
+
+
 import os, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -40,6 +43,15 @@ bond_mask = (
 
 st.caption("Bond assets detected:")
 st.write(list(prices[bond_mask].index))
+
+st.write("Weights index:", list(w.index))
+st.write("Prices index:", list(prices.index))
+
+st.write("In weights but not in prices:",
+         sorted(set(w.index) - set(prices.index)))
+st.write("In prices but not in weights:",
+         sorted(set(prices.index) - set(w.index)))
+
 
 # ------------------------------------------------------------
 # 2. Compute sensitivities
